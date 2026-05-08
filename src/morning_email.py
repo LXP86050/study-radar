@@ -13,16 +13,18 @@ from zoneinfo import ZoneInfo
 
 import markdown
 
-from src import email_sender, plan_parser
+from src import email_sender, plan_parser, state
 
-TARGET_HOUR_ET = 6  # 6:30 AM ET — hour check is on the hour, minute irrelevant
+TARGET_HOUR_ET = 6  # 6:30 AM ET; gate allows target±1 to tolerate GH cron delay
+FORCED = os.environ.get("FORCE_RUN") == "1"
 log = logging.getLogger("study_radar.morning")
 
 
 def _is_target_hour() -> bool:
-    if os.environ.get("FORCE_RUN") == "1":
+    if FORCED:
         return True
-    return datetime.now(ZoneInfo("America/New_York")).hour == TARGET_HOUR_ET
+    h = datetime.now(ZoneInfo("America/New_York")).hour
+    return abs(h - TARGET_HOUR_ET) <= 1
 
 
 def build_html(day_n: int, heading: str, body_md: str, total_days: int) -> str:
@@ -50,7 +52,10 @@ def run() -> int:
 
     if not _is_target_hour():
         h = datetime.now(ZoneInfo("America/New_York")).hour
-        log.info("skipping: ET hour is %d, target is %d", h, TARGET_HOUR_ET)
+        log.info("skipping: ET hour is %d, target is %d±1", h, TARGET_HOUR_ET)
+        return 0
+    if not FORCED and state.already_sent_today():
+        log.info("skipping: already sent today")
         return 0
 
     config = plan_parser.load_config()
@@ -80,6 +85,7 @@ def run() -> int:
     subject = f"Study: Day {day_n} — {et_short}"
     html = build_html(day_n, heading, body_md, config["total_days"])
     email_sender.send_email(subject, html)
+    state.mark_sent_today()
     log.info("sent Day %d email", day_n)
     return 0
 

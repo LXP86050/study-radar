@@ -3,17 +3,18 @@ name: Evening Reflection Email
 on:
   schedule:
     # 10:00 PM ET. Two crons cover DST: 02:00 UTC next day = 10pm EDT, 03:00 UTC next day = 10pm EST.
+    # Hour gate is target±1 (so 21–23 ET passes), and once-per-day dedup prevents double-sends.
     - cron: '0 2 * * *'
     - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       force:
-        description: 'Bypass the 10pm-ET hour check'
+        description: 'Bypass hour gate + dedup; send immediately'
         required: false
         default: 'false'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: study-radar-evening
@@ -36,4 +37,15 @@ jobs:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           FORCE_RUN: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
+          STATE_DIR: state/evening
         run: python -m src.evening_email
+      - name: Commit updated state
+        if: always()
+        run: |
+          if [[ -n "$(git status --porcelain state/)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add state/
+            git commit -m "state: evening sent today [skip ci]"
+            git push
+          fi
