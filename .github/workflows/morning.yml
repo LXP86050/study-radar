@@ -1,0 +1,40 @@
+name: Morning Study Email
+
+on:
+  schedule:
+    # 6:30 AM ET. Two crons cover DST: 10:30 UTC = 6:30 EDT (summer), 11:30 UTC = 6:30 EST (winter).
+    # The script's hour gate ensures only the correct one actually sends.
+    - cron: '30 10 * * *'
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Bypass the 6am-ET hour check'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: study-radar-morning
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Send morning email
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          FORCE_RUN: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
+        run: python -m src.morning_email
